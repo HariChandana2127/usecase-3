@@ -1,94 +1,50 @@
 pipeline {
     agent any
-
+    tools {
+        jdk 'jdk'
+        maven 'maven'
+    }
     environment {
-        PROJECT_ID = "leafy-rope-472907-e3"          // Replace with your GCP project ID
-        REGION = "us-central1"                      // Change if needed
-        GCS_BUCKET = "chandana21-bucket"            // Your GCS bucket name
-        ARTIFACT_NAME = "spring-petclinic-4.0.0-SNAPSHOT.jar"
-        REPO = "docker-demo"                        // Artifact Registry repository name
-        IMAGE_NAME = "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/spring-petclinic"
-        IMAGE_TAG = "${env.BUILD_NUMBER}"            // or "latest"
+        APPLICATION_NAME = 'spring-petclinic'
+        // DOCKER_CREDS = credentials('dockerhub_creds')
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('chandana-artifact-push')
     }
-
     stages {
-
-        stage('Build Java Artifact') {
-            steps {
-                sh 'mvn clean package -DskipTests'
+        stage('checkout') {
+            steps{
+                cleanWs()
+                sh "git clone https://github.com/spring-projects/spring-petclinic.git"
             }
         }
-
-        stage('Upload Artifact to GCS Bucket') {
-            steps {
-                withCredentials([file(credentialsId: 'gcp-sa-key', variable: 'GCP_KEYFILE')]) {
-                    sh '''
-                        echo "Authenticating with GCP..."
-                        gcloud auth activate-service-account --key-file="$GCP_KEYFILE"
-                        gcloud config set project ${PROJECT_ID}
-
-                        echo "Uploading artifact to GCS..."
-                        gsutil cp target/${ARTIFACT_NAME} gs://${GCS_BUCKET}/
-                    '''
+        stage('build') {
+            steps{
+                dir("/var/lib/jenkins/workspace/usecase3") {
+                    echo "Building ${APPLICATION_NAME}"
+                    sh "mvn clean package -DskipTests=true"
                 }
             }
         }
+        stage('UploadtoGCS') {
+            steps{
+                dir("/var/lib/jenkins/workspace/usecase3"){
+                    echo "Upload to my GCS Bucket"
+                    sh "gsutil cp spring-petclinic-4.0.0-SNAPSHOT.jar gs://chandana21_bucket"
 
-        stage('Download Artifact from GCS Bucket') {
-            steps {
-                withCredentials([file(credentialsId: 'gcp-sa-key', variable: 'GCP_KEYFILE')]) {
-                    sh '''
-                        echo "Authenticating again..."
-                        gcloud auth activate-service-account --key-file="$GCP_KEYFILE"
-                        gcloud config set project ${PROJECT_ID}
 
-                        echo "Downloading artifact from GCS..."
-                        gsutil cp gs://${GCS_BUCKET}/${ARTIFACT_NAME} ${ARTIFACT_NAME}
-                    '''
                 }
+
             }
         }
-
-        stage('Build Docker Image Using Artifact') {
-            steps {
-                sh '''
-                    echo "Building Docker image using artifact..."
-                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                '''
-            }
-        }
-
-        stage('Push Docker Image to Artifact Registry') {
-            steps {
-                withCredentials([file(credentialsId: 'gcp-sa-key', variable: 'GCP_KEYFILE')]) {
-                    sh '''
-                        echo "Authenticating Docker with Artifact Registry..."
-                        gcloud auth activate-service-account --key-file="$GCP_KEYFILE"
-                        gcloud config set project ${PROJECT_ID}
-                        gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
-
-                        echo "Pushing Docker image..."
-                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
-                        docker push ${IMAGE_NAME}:latest
-                    '''
-                }
-            }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Build and push successful!"
-            echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
-        }
-        failure {
-            echo "❌ Pipeline failed!"
-        }
-        always {
-            cleanWs()
-        }
+        // stage('codequality') {
+        //     steps {
+        //         echo "scanning ${APPLICATION_NAME} code"
+        //         sh """
+        //         mvn clean verify sonar:sonar \
+        //               -Dsonar.projectKey=${APPLICATION_NAME} \
+        //               -Dsonar.host.url=http://34.122.117.31:9000 \
+        //               -Dsonar.login=sqp_748eed9b9aaa19510244007b16459219cfa845e3
+        //         """
+        //     }
+        // }
     }
 }
-
-
