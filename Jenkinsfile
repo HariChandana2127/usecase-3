@@ -1,43 +1,46 @@
 pipeline {
     agent any
+
     tools {
-        jdk 'JDK'
-        maven 'maven'
+        jdk 'JDK'          // Make sure this matches your actual tool name
+        maven 'maven'      // Make sure this matches your actual tool name
     }
+
     environment {
         APPLICATION_NAME = 'spring-petclinic'
-        // DOCKER_CREDS = credentials('dockerhub_creds')
-        GOOGLE_APPLICATION_CREDENTIALS = credentials('chandana-artifact-push')
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account')
     }
+
     stages {
-        stage('checkout') {
-            steps{
+        stage('Checkout') {
+            steps {
                 cleanWs()
-                sh "git clone https://github.com/spring-projects/spring-petclinic.git"
+                git branch: 'main', url: 'https://github.com/spring-projects/spring-petclinic.git'
             }
         }
-        stage('build') {
-            steps{
-                dir("/var/lib/jenkins/workspace/usecase3") {
+
+        stage('Build') {
+            steps {
+                dir("${env.WORKSPACE}") {
                     echo "Building ${APPLICATION_NAME}"
                     sh "mvn clean package -DskipTests=true"
                 }
             }
         }
-        stage('UploadtoGCS') {
-            steps{
-                dir("/var/lib/jenkins/workspace/usecase3"){
-                    echo "Upload to my GCS Bucket"
-                    sh "gsutil cp spring-petclinic-4.0.0-SNAPSHOT.jar gs://chandana21_bucket"
 
-
+        stage('Upload to GCS') {
+            steps {
+                dir("${env.WORKSPACE}") {
+                    echo "Uploading JAR to GCS Bucket..."
+                    sh "gsutil cp target/spring-petclinic-4.0.0-SNAPSHOT.jar gs://chandana21_bucket/"
                 }
-
             }
         }
-        // stage('codequality') {
+
+        // Optional SonarQube stage
+        // stage('Code Quality') {
         //     steps {
-        //         echo "scanning ${APPLICATION_NAME} code"
+        //         echo "Scanning ${APPLICATION_NAME} code"
         //         sh """
         //         mvn clean verify sonar:sonar \
         //               -Dsonar.projectKey=${APPLICATION_NAME} \
@@ -48,3 +51,4 @@ pipeline {
         // }
     }
 }
+
