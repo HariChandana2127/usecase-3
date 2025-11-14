@@ -1,54 +1,34 @@
 pipeline {
     agent any
-
-    tools {
-        jdk 'jdk'          // Make sure this matches your actual tool name
-        maven 'maven'      // Make sure this matches your actual tool name
-    }
-
     environment {
-        APPLICATION_NAME = 'spring-petclinic'
-        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account')
-    }
-
+        BUCKET_NAME = 'chandana21_bucket'
+        ARTIFACT_NAME = 'spring-petclinic-3.5.0-SNAPSHOT.jar'
+        DOCKER_IMAGE_NAME = 'my-java-app-image'
+    } 
     stages {
-        stage('Checkout') {
+        stage('Build Artifact') {
             steps {
-                cleanWs()
-                git branch: 'main', url: 'https://github.com/spring-projects/spring-petclinic.git'
+                sh 'mvn clean package -DskipTests'
             }
         }
-
-        stage('Build') {
+        stage('Push Artifact to Bucket') {
             steps {
-                dir("${env.WORKSPACE}") {
-                    echo "Building ${APPLICATION_NAME}"
-                    sh "mvn clean package -DskipTests=true"
-                }
+                withCredentials([file(credentialsId: 'gcp-sa-key', variable: 'GCP_KEY')]) {
+                    sh '''
+                      set -e
+                      gcloud auth activate-service-account 'k8s-infra-sa@gowtham-project-476511.iam.gserviceaccount.com' --key-file=$GCP_KEY
+                      gcloud config set project 'gowtham-project-476511'
+                      gsutil cp target/${ARTIFACT_NAME} gs://${BUCKET_NAME}/
+                    
+                    '''
+                } 
+            } 
+        }
+        stage('Build Docker Image') {
+            steps {
+                sh "gsutil cp gs://${BUCKET_NAME}/${ARTIFACT_NAME} ."
+                sh "docker build -t ${DOCKER_IMAGE_NAME} ."
             }
         }
-
-        stage('Upload to GCS') {
-            steps {
-                dir("${env.WORKSPACE}") {
-                    echo "Uploading JAR to GCS Bucket..."
-                    sh "gsutil cp target/spring-petclinic-4.0.0-SNAPSHOT.jar gs://chandana21_bucket/"
-                }
-            }
-        }
-
-        // Optional SonarQube stage
-        // stage('Code Quality') {
-        //     steps {
-        //         echo "Scanning ${APPLICATION_NAME} code"
-        //         sh """
-        //         mvn clean verify sonar:sonar \
-        //               -Dsonar.projectKey=${APPLICATION_NAME} \
-        //               -Dsonar.host.url=http://34.122.117.31:9000 \
-        //               -Dsonar.login=sqp_748eed9b9aaa19510244007b16459219cfa845e3
-        //         """
-        //     }
-        // }
     }
 }
-
